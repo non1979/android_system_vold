@@ -17,6 +17,7 @@
 #include "sehandle.h"
 #include "Utils.h"
 #include "Process.h"
+#include "VolumeManager.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
@@ -37,6 +38,7 @@
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include <sys/statvfs.h>
 
@@ -139,22 +141,22 @@ status_t ForceUnmount(const std::string& path, bool detach /* = false */) {
     }
     // Apps might still be handling eject request, so wait before
     // we start sending signals
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     Process::killProcessesWithOpenFiles(cpath, SIGINT);
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
     Process::killProcessesWithOpenFiles(cpath, SIGTERM);
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
     Process::killProcessesWithOpenFiles(cpath, SIGKILL);
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
@@ -167,17 +169,17 @@ status_t KillProcessesUsingPath(const std::string& path) {
     if (Process::killProcessesWithOpenFiles(cpath, SIGINT) == 0) {
         return OK;
     }
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     if (Process::killProcessesWithOpenFiles(cpath, SIGTERM) == 0) {
         return OK;
     }
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
         return OK;
     }
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     // Send SIGKILL a second time to determine if we've
     // actually killed everyone with open files
@@ -304,7 +306,7 @@ status_t ForkExecvp(const std::vector<std::string>& args,
         LOG(ERROR) << "Failed to setexeccon";
         abort();
     }
-    FILE* fp = popen(cmd.c_str(), "r");
+    FILE* fp = popen(cmd.c_str(), "r"); // NOLINT
     if (setexeccon(nullptr)) {
         LOG(ERROR) << "Failed to setexeccon";
         abort();
@@ -625,15 +627,15 @@ std::string BuildDataMediaCePath(const char* volumeUuid, userid_t userId) {
 std::string BuildDataUserCePath(const char* volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
-    if (volumeUuid == nullptr) {
-        if (userId == 0) {
-            return StringPrintf("%s/data", data.c_str());
-        } else {
-            return StringPrintf("%s/user/%u", data.c_str(), userId);
+    if (volumeUuid == nullptr && userId == 0) {
+        std::string legacy = StringPrintf("%s/data", data.c_str());
+        struct stat sb;
+        if (lstat(legacy.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)) {
+            /* /data/data is dir, return /data/data for legacy system */
+            return legacy;
         }
-    } else {
-        return StringPrintf("%s/user/%u", data.c_str(), userId);
     }
+    return StringPrintf("%s/user/%u", data.c_str(), userId);
 }
 
 std::string BuildDataUserDePath(const char* volumeUuid, userid_t userId) {

@@ -41,6 +41,7 @@ class Keymaster {
 #else
 
 #include <android/hardware/keymaster/3.0/IKeymasterDevice.h>
+#include <android-base/macros.h>
 #include <keystore/authorization_set.h>
 
 namespace android {
