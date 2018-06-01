@@ -818,14 +818,14 @@ int Volume::extractMetadata(const char* devicePath) {
     if (fgets(line, sizeof(line), fp) != NULL) {
         ALOGD("blkid identified as %s", line);
 
-        char* start = strstr(line, "UUID=");
+        char* start = strstr(line, "UUID=\"");
         if (start != NULL && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
             setUuid(value);
         } else {
             setUuid(NULL);
         }
 
-        start = strstr(line, "LABEL=");
+        start = strstr(line, "LABEL=\"");
         if (start != NULL && sscanf(start + 6, "\"%127[^\"]\"", value) == 1) {
             setUserLabel(value);
         } else {
